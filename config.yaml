@@ -1,0 +1,27 @@
+outFolder: results/
+variants: inputs/test100variants_bonferroni_no_header.bed # Expects headerless file with columns - chr, start, end, variant_id
+full_assoc_sumstat: inputs/subset.sumstats.tsv.gz
+n_splits: 4
+threads: 2
+
+# Software setting
+R_version: "R/4.2.0"
+TABIX_version: "tabix/0.2.6"
+
+chunk_prefix: variants.part
+
+split_variants_script: scripts/split_variants.R
+read_bigbrain_script: scripts/read_bigbrain.R
+join_bigbrain_script: scripts/join_bigbrain.R
+
+# Setting for run_bigbrain
+rb_cores: 2 
+
+# Settings for fir_R_MR
+# mr_method: ivw       # or egger_p, median, mbe, ps, aps, raps, mr_presso, mr_mix
+# mr_min_inst: 2
+
+
+# Required packages
+# optparse
+# doParallel

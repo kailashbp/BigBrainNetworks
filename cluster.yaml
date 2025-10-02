@@ -1,0 +1,29 @@
+__default__:
+  queue: express
+  cores: 1
+  himem: ""
+  mem: 4000
+  time: '1:00'
+  name: "{rule}.{wildcards}"
+  output: logs/{rule}.{wildcards}.out
+  error: logs/{rule}.{wildcards}.err
+
+split_variants:
+  time: '0:10'
+  cores: 1
+  mem: 2000
+
+subset_sumstats:
+  time: '2:00'
+  cores: 8
+  mem: 16000
+
+read_bigbrain_per_split:
+  time: '2:00'
+  cores: 8
+  mem: 32000
+
+join_bigbrain_all:
+  time: '4:00'
+  cores: 4
+  mem: 32000
