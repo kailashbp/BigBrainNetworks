@@ -1,11 +1,11 @@
-# Kailash BP — inspre backbone: read_bigbrain per split, then join_bigbrain
+# Kailash BP — BigBrainNetworks backbone: read_bigbrain per split, then join_bigbrain
 import os
 
 # ---------- Config ----------
 outFolder      = config.get("outFolder", "results")
 variants_tsv   = config["variants"]                         # TSV: chr, pos, end, variant_id
 sumstats_tsv   = config["full_assoc_sumstat"]               # MUST be bgzipped + tabix-indexed
-n_splits       = int(config.get("n_splits", 1000))
+n_splits       = int(config.get("n_splits", 1000))          # Split variants into how many parts?
 threads        = int(config.get("threads", 8))
 chunk_prefix   = config.get("chunk_prefix", "variants.part")
 
@@ -98,7 +98,8 @@ rule subset_sumstats:
         awk 'BEGIN{{OFS=""}} {{pos=$2+1; print $1,":",pos,"-",pos}}' {input.bed} > {params.regs}
 
         # 2) Write header exactly once (respects -S meta-lines from indexing)
-        tabix -H {input.sumstats} > {params.tmp}
+        # tabix -H {input.sumstats} > {params.tmp}
+        zcat {input.sumstats} | head -n 1 > {params.tmp}
 
         # 3) If no regions, just compress header and exit
         if [ ! -s {params.regs} ]; then
@@ -143,14 +144,12 @@ rule read_bigbrain_per_split:
         rds    = f"{rds_dir}/chunk_{{I}}.rds"
     params:
         script = read_bigbrain_R
-    threads: int(config.get("rb_cores", 8))
     shell:
         """
         ml {R_VERSION};
         Rscript {params.script} \
           --sumstats {input.subset} \
-          --out {output.rds} \
-          --cores {threads}
+          --out {output.rds}
         """
 
 # 4) Join all chunk RDS with join_bigbrain(); emit combined outputs

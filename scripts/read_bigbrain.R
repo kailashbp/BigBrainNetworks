@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 suppressPackageStartupMessages({
-  library(optparse); library(readr); library(dplyr); library(doParallel)
+  library(optparse); library(readr); library(dplyr)
 })
 
 # === adjust defaults to your columns ===
@@ -20,18 +20,9 @@ opt_list <- list(
   make_option("--delim", default="\t"),
   make_option("--filter_col", default="crossmap"),
   make_option("--filter_min", type="double", default=0),
-  make_option("--filter_max", type="double", default=0.1),
-  make_option("--cores", type="integer", default=1)
+  make_option("--filter_max", type="double", default=0.1)
 )
 opt <- parse_args(OptionParser(option_list = opt_list))
-
-# --- setup parallel backend ---
-# --- setup parallel backend (use CLI cores) ---
-if (opt$cores > 1) {
-  doParallel::registerDoParallel(cores = opt$cores)
-  } else {
-    foreach::registerDoSEQ()
-  }
 
 # Loading the function
 source("scripts/process_bigbrain_functions.R")
@@ -57,4 +48,3 @@ res <- read_bigbrain(
 )
 
 saveRDS(res, file = opt$out)
-doParallel::stopImplicitCluster()

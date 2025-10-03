@@ -54,7 +54,7 @@ read_bigbrain <- function(filename, beta_col, p_col, id_col = "variant_id",
         dplyr::rename(Exposure = feature, beta_exp = beta, se_exp = se)
       
       right <- effect_df %>%
-        dplyr::select(-inst, - p) %>%
+        dplyr::select(-inst, -p) %>%
         dplyr::rename(Outcome = feature, beta_out = beta, se_out = se)
       
       dplyr::cross_join(left, right) %>%
@@ -139,7 +139,7 @@ read_bigbrain <- function(filename, beta_col, p_col, id_col = "variant_id",
   }
   
   callback_fn <- readr::SideEffectChunkCallback$new(f) # Call f for every chunk, and not return anything, but mutate global variable effect_df & result_df outside callback
-  readr::read_delim_chunked(filename, callback_fn, chunk_size = 1, delim = delim)
+  readr::read_delim_chunked(filename, callback_fn, chunk_size = 1, delim = delim, show_col_types = FALSE)
   
   # final flush for the last SNP
   exp_data <- process_effect_df(effect_df)
