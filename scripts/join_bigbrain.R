@@ -19,8 +19,6 @@ stopifnot(length(opt$inputs) > 0)
 message("Merging ", length(rds_files), " input RDS files.")
 message("group_size = ", opt$group_size, ", cores = ", opt$cores)
 
-objs <- map(rds_files, readRDS)
-
 # Loading the function
 source("scripts/process_bigbrain_functions.R")
 
