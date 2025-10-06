@@ -1,2 +1,4 @@
 inputs/
 results/
+cluster/
+.snakemake

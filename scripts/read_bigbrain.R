@@ -16,7 +16,7 @@ opt_list <- list(
   make_option("--pos_col",  default="pos"),
   make_option("--ref_col",  default="ref"),
   make_option("--alt_col",  default="alt"),
-  make_option("--feature_col", default="#feature"),
+  make_option("--feature_col", default="feature"),
   make_option("--delim", default="\t"),
   make_option("--filter_col", default="crossmap"),
   make_option("--filter_min", type="double", default=0),

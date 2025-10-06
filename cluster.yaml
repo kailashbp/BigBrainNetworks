@@ -16,12 +16,12 @@ split_variants:
 subset_sumstats:
   time: '2:00'
   cores: 8
-  mem: 16000
+  mem: 1000
 
 read_bigbrain_per_split:
   time: '2:00'
-  cores: 8
-  mem: 32000
+  cores: 1
+  mem: 10000
 
 join_bigbrain_all:
   time: '4:00'

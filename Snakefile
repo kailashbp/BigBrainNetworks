@@ -81,13 +81,15 @@ rule subset_sumstats:
     output:
         subset   = f"{subset_dir}/{chunk_prefix}_{{I}}.sumstats.tsv.gz"
     params:
-        tmp   = lambda wc: f"{subset_dir}/.{chunk_prefix}_{wc.I}.tmp.tsv",      # plain TSV until bgzip
-        regs  = lambda wc: f"{subset_dir}/.{chunk_prefix}_{wc.I}.regions",
-        tdir  = lambda wc: f"{subset_dir}/.{chunk_prefix}_{wc.I}.parts"
+        tmp   = lambda wc: f"{subset_dir}/tmp.{chunk_prefix}_{wc.I}.tmp.tsv",      # plain TSV until bgzip
+        regs  = lambda wc: f"{subset_dir}/tmp.{chunk_prefix}_{wc.I}.regions",
+        tdir  = lambda wc: f"{subset_dir}/tmp.{chunk_prefix}_{wc.I}.parts"
     threads: int(config.get("subset_threads", 8))
     shell:
         r"""
         set -euo pipefail
+        shopt -s nullglob
+
         ml {TABIX_VERSION}
 
         # 0) Prep temp dir
@@ -96,10 +98,12 @@ rule subset_sumstats:
 
         # 1) BED(0-based) -> 1-based "chr:start-end"
         awk 'BEGIN{{OFS=""}} {{pos=$2+1; print $1,":",pos,"-",pos}}' {input.bed} > {params.regs}
+        echo "DONE extracting info for tabix"
 
-        # 2) Write header exactly once (respects -S meta-lines from indexing)
-        # tabix -H {input.sumstats} > {params.tmp}
-        zcat {input.sumstats} | head -n 1 > {params.tmp}
+        # 2) Write header exactly once
+        # gzip -cd {input.sumstats} | head -n1 > {params.tmp}
+        echo "feature	variant_id	chr	pos	ref	alt	fixed_beta	fixed_sd	Fixed_P	Random_Z	Random_P	cis_feature	crossmap" > {params.tmp}
+        echo "DONE writing header"
 
         # 3) If no regions, just compress header and exit
         if [ ! -s {params.regs} ]; then
@@ -108,10 +112,13 @@ rule subset_sumstats:
           rmdir {params.tdir}
           exit 0
         fi
+        echo "DONE compressing file if no regions"
 
         # 4) Split regions into {threads} shards (round-robin) for parallel tabix, no -R
         awk -v T={threads} '{{ fn=sprintf("{params.tdir}/regs.%02d", (NR-1)%T); print > fn }}' {params.regs}
-
+        echo "DONE prepping for parallel tabix"
+        
+        echo "STARTING TABIX"
         # 5) For each shard: sequentially query each region -> its own part file (no concurrent appends)
         for f in {params.tdir}/regs.*; do
           [ -s "$f" ] || continue
@@ -123,6 +130,7 @@ rule subset_sumstats:
           ) > "$of" &
         done
         wait
+        echo "TABIX DONE"
 
         # 6) Concatenate part files in numeric order, then compress
         for p in $(ls {params.tdir}/part.* 2>/dev/null | sort); do
@@ -130,6 +138,7 @@ rule subset_sumstats:
         done
 
         bgzip -c {params.tmp} > {output.subset}
+        echo "DONE bgzip"
 
         # 7) Cleanup
         rm -f {params.tmp} {params.regs}
@@ -155,18 +164,27 @@ rule read_bigbrain_per_split:
 # 4) Join all chunk RDS with join_bigbrain(); emit combined outputs
 rule join_bigbrain_all:
     input:
-        # drive creation of all per-split RDS by expanding the wildcard
         rds = expand(f"{rds_dir}/chunk_{{I}}.rds", I=[f"{i:05d}" for i in range(1, n_splits+1)])
     output:
         inst_gz    = combined_inst_gz,
         result_rds = combined_result_rds
     params:
-        script = join_bigbrain_R
+        script = join_bigbrain_R,
+        input_list = "results/rds_input_files_list.txt",
+        group_size  = config.get("join_group_size", 8), 
+        cores       = config.get("join_cores", 10)
+    threads: lambda wildcards, attempt: config.get("join_cores", 10)
     shell:
-        """
-        ml {R_VERSION};
+        r"""
+        set -euo pipefail
+        ml {R_VERSION}
+        
+        printf "%s\n" {input.rds} > {params.input_list}       
+ 
         Rscript {params.script} \
-          --inputs {input.rds} \
+          --inputs {params.input_list} \
           --inst {output.inst_gz} \
+          --group_size {params.group_size} \
+          --cores {params.cores} \
           --result {output.result_rds}
         """

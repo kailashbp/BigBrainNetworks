@@ -167,31 +167,57 @@ join_bigbrain <- function(...) {
   
   aggregate_res <- function(res){
     # skip if malformed
-    if (is.null(res$result_df) || is.null(res$inst_df)) return(invisible())
-    
+    if (is.null(res$result_df) || is.null(res$inst_df) || nrow(res$result_df) == 0) return(invisible())
+ 
+    # add instruments   
     inst_out <<- dplyr::bind_rows(inst_out, res$inst_df)
+
+    # collapse current chunk to one row per key with list-cols
+    res_c <- res$result_df %>%
+      dplyr::group_by(exp_out, Exposure, Outcome) %>%
+      dplyr::summarise(
+        inst     = list(inst),
+        beta_exp = list(beta_exp),
+        se_exp   = list(se_exp),
+        beta_out = list(beta_out),
+        se_out   = list(se_out),
+        .groups = "drop"
+      )
+    
+    # Use first chunk as is
     if (nrow(result_out) == 0) {
-      result_out <<- res$result_df
+      result_out <<- res_c
       return(invisible())
     }
-    
-    idx <- seq_len(nrow(res$result_df))
-    match_idx <- match(res$result_df$exp_out, result_out$exp_out)
-    has_match <- which(!is.na(match_idx))
-    if (length(has_match) > 0) {
-      i <- has_match; m <- match_idx[has_match]
-      result_out$inst[m]     <<- purrr::map2(result_out$inst[m],     res$result_df$inst[i],     ~append(.x, .y))
-      result_out$beta_exp[m] <<- purrr::map2(result_out$beta_exp[m], res$result_df$beta_exp[i], ~append(.x, .y))
-      result_out$se_exp[m]   <<- purrr::map2(result_out$se_exp[m],   res$result_df$se_exp[i],   ~append(.x, .y))
-      result_out$beta_out[m] <<- purrr::map2(result_out$beta_out[m], res$result_df$beta_out[i], ~append(.x, .y))
-      result_out$se_out[m]   <<- purrr::map2(result_out$se_out[m],   res$result_df$se_out[i],   ~append(.x, .y))
+
+    # match on all keys (safer than exp_out alone)
+    key_join <- dplyr::left_join(
+      res_c %>% dplyr::mutate(.row_id = dplyr::row_number()),
+      result_out %>% dplyr::mutate(.idx = dplyr::row_number()),
+      by = c("exp_out","Exposure","Outcome")
+    )
+
+    has_match <- stats::na.omit(key_join$.idx)
+    if (length(has_match)) {
+      i <- key_join$.row_id[!is.na(key_join$.idx)]
+      m <- key_join$.idx[!is.na(key_join$.idx)]
+      result_out$inst[m]     <<- purrr::map2(result_out$inst[m],     res_c$inst[i],     ~c(.x, .y))
+      result_out$beta_exp[m] <<- purrr::map2(result_out$beta_exp[m], res_c$beta_exp[i], ~c(.x, .y))
+      result_out$se_exp[m]   <<- purrr::map2(result_out$se_exp[m],   res_c$se_exp[i],   ~c(.x, .y))
+      result_out$beta_out[m] <<- purrr::map2(result_out$beta_out[m], res_c$beta_out[i], ~c(.x, .y))
+      result_out$se_out[m]   <<- purrr::map2(result_out$se_out[m],   res_c$se_out[i],   ~c(.x, .y))
     }
-    if (any(is.na(match_idx))) {
-      result_out <<- dplyr::bind_rows(result_out, res$result_df[is.na(match_idx), ])
+
+    if (any(is.na(key_join$.idx))) {
+      result_out <<- dplyr::bind_rows(
+        result_out,
+        res_c[key_join$.row_id[is.na(key_join$.idx)], ]
+      )
     }
   }
-  
+
   purrr::walk(input_res, aggregate_res)
   inst_out <- dplyr::distinct(inst_out)
-  list(inst_df = inst_out, result_df = result_out)
+
+  list(inst_df = inst_out, result_df = result_out) 
 }
