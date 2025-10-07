@@ -139,8 +139,21 @@ read_bigbrain <- function(filename, beta_col, p_col, id_col = "variant_id",
   }
   
   callback_fn <- readr::SideEffectChunkCallback$new(f) # Call f for every chunk, and not return anything, but mutate global variable effect_df & result_df outside callback
-  readr::read_delim_chunked(filename, callback_fn, chunk_size = 1, delim = delim, show_col_types = FALSE)
-  
+  readr::read_delim_chunked(
+  filename, callback_fn, chunk_size = 1, delim = delim, show_col_types = FALSE,
+  col_types = readr::cols(
+    !!id_col   := readr::col_character(),
+    !!chr_col  := readr::col_character(),
+    !!pos_col  := readr::col_double(),
+    !!ref_col  := readr::col_character(),
+    !!alt_col  := readr::col_character(),
+    !!feature_col := readr::col_character(),
+    !!beta_col := readr::col_double(),
+    !!se_col   := readr::col_double(),
+    !!p_col    := readr::col_double()
+   )
+   )
+ 
   # final flush for the last SNP
   exp_data <- process_effect_df(effect_df)
   merge_exp_data(exp_data)
@@ -152,82 +165,67 @@ read_bigbrain <- function(filename, beta_col, p_col, id_col = "variant_id",
 }
 
 join_bigbrain <- function(...) {
-  input_res <- list(...)
   # filter out NULLs or empty results
-  input_res <- purrr::compact(input_res)
+  input_res <- purrr::compact(list(...))
   if (length(input_res) == 0) {
     return(list(inst_df = tibble::tibble(), result_df = tibble::tibble()))
   }
   
-  inst_out   <- tibble::tibble(inst=character(), chr=character(), pos=numeric(),
-                               ref=character(), alt=character())
-  result_out <- tibble::tibble(exp_out=character(), Exposure=character(), Outcome=character(),
-                               inst=list(), beta_exp=list(), se_exp=list(),
+  inst_df    <- tibble::tibble(inst=character(), chr=character(), pos=numeric(),
+                               ref=character(), alt=character(), n_eff=numeric())
+  result_df  <- tibble::tibble(exp_out=character(), Exposure=character(), Outcome=character(),
+                               inst=list(),
+                               beta_exp=list(), se_exp=list(),
                                beta_out=list(), se_out=list())
   
   aggregate_res <- function(res){
-    # skip if malformed
     if (is.null(res$result_df) || is.null(res$inst_df) || nrow(res$result_df) == 0) return(invisible())
- 
-    # enforce column types
-    res$inst_df <- res$inst_df %>%
-    dplyr::mutate(
-      inst = as.character(inst),
-      chr  = as.character(chr),
-      ref  = as.character(ref),
-      alt  = as.character(alt),
-      pos  = as.numeric(pos)
-    )
-   
-    # add instruments   
-    inst_out <<- dplyr::bind_rows(inst_out, res$inst_df)
-
-    # collapse current chunk to one row per key with list-cols
-    res_c <- res$result_df %>%
-      dplyr::group_by(exp_out, Exposure, Outcome) %>%
-      dplyr::summarise(
-        inst     = list(inst),
-        beta_exp = list(beta_exp),
-        se_exp   = list(se_exp),
-        beta_out = list(beta_out),
-        se_out   = list(se_out),
-        .groups = "drop"
-      )
+    message("Joining with existing data.")
+    start.time <- Sys.time()
     
+    # ensure instrument types
+    if (!"n_eff" %in% names(res$inst_df)) res$inst_df$n_eff <- NA_real_
+    res$inst_df <- res$inst_df %>%
+      dplyr::mutate(
+        inst = as.character(inst),
+        chr  = as.character(chr),
+        pos  = as.numeric(pos),
+        ref  = as.character(ref),
+        alt  = as.character(alt),
+        n_eff = as.numeric(n_eff)
+      )
+
+    # add instruments   
+    inst_df <<- dplyr::bind_rows(inst_df, res$inst_df)
+
     # Use first chunk as is
-    if (nrow(result_out) == 0) {
-      result_out <<- res_c
+    if (nrow(result_df) == 0) {
+      result_df <<- res$result_df
       return(invisible())
     }
 
-    # match on all keys (safer than exp_out alone)
-    key_join <- dplyr::left_join(
-      res_c %>% dplyr::mutate(.row_id = dplyr::row_number()),
-      result_out %>% dplyr::mutate(.idx = dplyr::row_number()),
-      by = c("exp_out","Exposure","Outcome")
-    )
-
-    has_match <- stats::na.omit(key_join$.idx)
-    if (length(has_match)) {
-      i <- key_join$.row_id[!is.na(key_join$.idx)]
-      m <- key_join$.idx[!is.na(key_join$.idx)]
-      result_out$inst[m]     <<- purrr::map2(result_out$inst[m],     res_c$inst[i],     ~c(.x, .y))
-      result_out$beta_exp[m] <<- purrr::map2(result_out$beta_exp[m], res_c$beta_exp[i], ~c(.x, .y))
-      result_out$se_exp[m]   <<- purrr::map2(result_out$se_exp[m],   res_c$se_exp[i],   ~c(.x, .y))
-      result_out$beta_out[m] <<- purrr::map2(result_out$beta_out[m], res_c$beta_out[i], ~c(.x, .y))
-      result_out$se_out[m]   <<- purrr::map2(result_out$se_out[m],   res_c$se_out[i],   ~c(.x, .y))
+    # match by exp_out and concat list-cols
+    match_idx <- match(res$result_df$exp_out, result_df$exp_out)
+    i <- which(!is.na(match_idx))
+    m <- match_idx[i]
+   
+    if (length(i)) {
+      result_df$inst[m]     <<- purrr::map2(result_df$inst[m],     res$result_df$inst[i],     c)
+      result_df$beta_exp[m] <<- purrr::map2(result_df$beta_exp[m], res$result_df$beta_exp[i], c)
+      result_df$se_exp[m]   <<- purrr::map2(result_df$se_exp[m],   res$result_df$se_exp[i],   c)
+      result_df$beta_out[m] <<- purrr::map2(result_df$beta_out[m], res$result_df$beta_out[i], c)
+      result_df$se_out[m]   <<- purrr::map2(result_df$se_out[m],   res$result_df$se_out[i],   c)
     }
 
-    if (any(is.na(key_join$.idx))) {
-      result_out <<- dplyr::bind_rows(
-        result_out,
-        res_c[key_join$.row_id[is.na(key_join$.idx)], ]
-      )
+    # append new exp_outs
+    if (any(is.na(match_idx))) {
+      result_df <<- dplyr::bind_rows(result_df, res$result_df[is.na(match_idx), ])
     }
+    print(Sys.time() - start.time)
   }
 
   purrr::walk(input_res, aggregate_res)
-  inst_out <- dplyr::distinct(inst_out)
 
-  list(inst_df = inst_out, result_df = result_out) 
-}
+  inst_df <- dplyr::distinct(inst_df)
+  return(list(inst_df = inst_df, result_df = result_df))
+} 
