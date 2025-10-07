@@ -169,6 +169,16 @@ join_bigbrain <- function(...) {
     # skip if malformed
     if (is.null(res$result_df) || is.null(res$inst_df) || nrow(res$result_df) == 0) return(invisible())
  
+    # enforce column types
+    res$inst_df <- res$inst_df %>%
+    dplyr::mutate(
+      inst = as.character(inst),
+      chr  = as.character(chr),
+      ref  = as.character(ref),
+      alt  = as.character(alt),
+      pos  = as.numeric(pos)
+    )
+   
     # add instruments   
     inst_out <<- dplyr::bind_rows(inst_out, res$inst_df)
 
